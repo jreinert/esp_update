@@ -1,0 +1,17 @@
+name: esp_update
+version: 0.1.0
+
+authors:
+  - Joakim Reinert <mail@jreinert.com>
+
+targets:
+  esp_update:
+    main: src/esp_update.cr
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+
+crystal: 0.21.1
+
+license: MIT
