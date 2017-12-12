@@ -2,11 +2,12 @@ require "./esp_update/*"
 require "kemal"
 require "option_parser"
 require "semantic_version"
+require "digest"
 
 module EspUpdate
   record(
     Options,
-    bindir : String = ".", 
+    bindir : String = ".",
     host : String = "localhost",
     port : Int32 = 3000,
     ssl : Bool = false,
@@ -76,6 +77,19 @@ module EspUpdate
     abort(option_parser)
   end
 
+  def self.md5_digest(file)
+    digest = Digest::MD5.digest do |ctx|
+      buffer = Bytes.new(4096)
+      File.open(file) do |f|
+        while (bytes_read = f.read(buffer)) > 0
+          ctx.update(buffer[0, bytes_read])
+        end
+      end
+    end
+
+    digest.to_slice.hexstring
+  end
+
   error 404 do |context|
     context.response.puts "404 - Not Found"
   end
@@ -90,7 +104,7 @@ module EspUpdate
     end
 
     version = SemanticVersion.parse(
-      context.request.headers["HTTP_X_ESP8266_VERSION"]? || "0.0.0-0"
+      context.request.headers["x-ESP8266-version"]? || "0.0.0-0"
     )
 
     available_firmwares = {} of SemanticVersion => String
@@ -108,12 +122,13 @@ module EspUpdate
     end
 
     blob = available_firmwares[latest_version]
-    context.response.content_type = "application/octet-stream"
+    context.response.headers["x-MD5"] = md5_digest(blob)
     context.response.content_length = File.size(blob)
+    filename = [context.params.url["project"], File.basename(blob)].join('_')
+    context.response.headers["Content-Disposition"] =
+      "attachment; filename=#{filename}"
 
-    File.open(blob) do |file|
-      IO.copy(file, context.response)
-    end
+    send_file(context, blob)
   end
 
   Kemal.config.tap do |config|
