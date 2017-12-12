@@ -5,76 +5,10 @@ require "semantic_version"
 require "digest"
 
 module EspUpdate
-  record(
-    Options,
-    bindir : String = ".",
-    host : String = "localhost",
-    port : Int32 = 3000,
-    ssl : Bool = false,
-    ssl_cert : String? = nil,
-    ssl_key : String? = nil
-  ) { setter :bindir, :host, :port, :ssl, :ssl_cert, :ssl_key }
-
-  options = Options.new
-
-  option_parser = OptionParser.new do |parser|
-    parser.banner = "Usage: #{$0} [options]"
-
-    parser.on(
-      "-d PATH", "--bindir PATH",
-      "Path to directory with firmware blobs (defaults to current directory)"
-    ) do |path|
-      options.bindir = path
-    end
-
-    parser.on(
-      "-h HOST", "--host HOST",
-      "Listen on this host (defaults to localhost)"
-    ) do |host|
-      options.host = host
-    end
-
-    parser.on(
-      "-p PORT", "--port PORT",
-      "Listen on this port (defaults to 3000)"
-    ) do |port|
-      options.port = port.to_i
-    end
-
-    parser.on(
-      "-s", "--use-ssl",
-      "Use SSL (defaults to plain HTTP)"
-    ) do
-      options.ssl = true
-    end
-
-    parser.on(
-      "-k PATH", "--ssl-key-file PATH",
-      "SSL key File (required when using ssl)"
-    ) do |path|
-      options.ssl_key = path
-    end
-
-    parser.on(
-      "-c PATH", "--ssl-cert-file PATH",
-      "SSL cert file (required when using ssl)"
-    ) do |path|
-      options.ssl_cert = path
-    end
-
-    parser.on("-?", "--help", "Show this message") do
-      puts parser
-      exit
-    end
-  end
-
   begin
-    option_parser.parse!
-    raise "No SSL key file given" if options.ssl && !options.ssl_key
-    raise "No SSL cert file given" if options.ssl && !options.ssl_cert
+    options = Cli.parse_options
   rescue e
-    puts e.message
-    abort(option_parser)
+    abort(e)
   end
 
   def self.md5_digest(file)
@@ -134,12 +68,6 @@ module EspUpdate
   Kemal.config.tap do |config|
     config.host_binding = options.host
     config.port = options.port
-    if options.ssl
-      ssl = Kemal::SSL.new
-      ssl.key_file = options.ssl_key.not_nil!
-      ssl.cert_file = options.ssl_cert.not_nil!
-      config.ssl = ssl.context
-    end
   end
 
   Kemal.run
