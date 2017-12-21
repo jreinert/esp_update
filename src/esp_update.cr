@@ -5,8 +5,10 @@ require "semantic_version"
 require "digest"
 
 module EspUpdate
-  begin
-    options = Cli.parse_options
+  @@options : Options?
+
+  def self.options
+    @@options ||= Cli.parse_options
   rescue e
     abort(e)
   end
@@ -24,18 +26,19 @@ module EspUpdate
     digest.to_slice.hexstring
   end
 
-  error 404 do |context|
-    context.response.puts "404 - Not Found"
+  enum UpdateType
+    Firmware
+    Spiffs
   end
 
-  get "/:project" do |context|
+  def self.handle_update(context, type : UpdateType)
     project_dir = File.join(options.bindir, context.params.url["project"])
-    blobs = Dir[File.join(project_dir, "*.bin")]
-
-    unless blobs.any?
-      context.response.status_code = 404
-      next
-    end
+    blobs = case type
+            when UpdateType::Firmware
+              Dir[File.join(project_dir, "*.fw.bin")]
+            else UpdateType
+              Dir[File.join(project_dir, "*.spiffs.bin")]
+            end
 
     version = SemanticVersion.parse(
       context.request.headers["x-ESP8266-version"]? || "0.0.0-0"
@@ -44,15 +47,21 @@ module EspUpdate
     available_firmwares = {} of SemanticVersion => String
 
     blobs.each do |file|
-      blob_version = SemanticVersion.parse(File.basename(file, ".bin"))
+      version_string = File.basename(file)[/.*(?=(?:\.fw|\.spiffs)\.bin)/]
+      blob_version = SemanticVersion.parse(version_string)
       available_firmwares[blob_version] = file
+    end
+
+    if available_firmwares.empty?
+      context.response.status_code = 404
+      return
     end
 
     latest_version = available_firmwares.keys.max
 
     if latest_version <= version
       context.response.status_code = 304
-      next
+      return
     end
 
     blob = available_firmwares[latest_version]
@@ -63,6 +72,18 @@ module EspUpdate
       "attachment; filename=#{filename}"
 
     send_file(context, blob)
+  end
+
+  error 404 do |context|
+    context.response.puts "404 - Not Found"
+  end
+
+  get "/:project/spiffs" do |context|
+    handle_update(context, UpdateType::Spiffs)
+  end
+
+  get "/:project" do |context|
+    handle_update(context, UpdateType::Firmware)
   end
 
   Kemal.config.tap do |config|
